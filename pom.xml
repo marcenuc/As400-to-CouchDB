@@ -64,4 +64,7 @@
 		<name>nuccio s.a.s.</name>
 		<url>http://nuccioservizi.it/</url>
 	</organization>
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+	</properties>
 </project>
