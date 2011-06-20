@@ -8,7 +8,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -22,6 +21,9 @@ import org.codehaus.jackson.node.JsonNodeFactory;
 import org.codehaus.jackson.node.ObjectNode;
 import org.ektorp.CouchDbConnector;
 import org.ektorp.DocumentNotFoundException;
+import org.ektorp.ViewQuery;
+import org.ektorp.ViewResult;
+import org.ektorp.ViewResult.Row;
 
 public class As400Importer {
 
@@ -29,10 +31,10 @@ public class As400Importer {
 
 	private static final String			ID_SCALARINI										= "scalarini";
 	private static final String			ID_MODELLI_E_SCALARINI					= "modelli_e_scalarini";
+	private static final String			ID_AZIENDA											= "azienda/";
 
 	private static final String[]		CLIENTI_MAGAZZINO								= { "019999", "099990" };
 	private static final String			CLIENTE_DISPONIBILE							= "019998";
-	private static final String[]		CLIENTI_NEGOZIO									= { "099997" };
 
 	private static final String			SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
 																																			+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
@@ -151,48 +153,26 @@ public class As400Importer {
 		 * Importazione aziende (ANCL200F).
 		 */
 		{
-			final Map<String, String[]> codiciAzienda = new HashMap<String, String[]>(3);
-			{
-				final String[] magazzini = Arrays.copyOf(CLIENTI_MAGAZZINO, CLIENTI_MAGAZZINO.length + 1);
-				magazzini[CLIENTI_MAGAZZINO.length] = CLIENTE_DISPONIBILE;
-				codiciAzienda.put("MAGAZZINO", magazzini);
-				codiciAzienda.put("NEGOZIO", CLIENTI_NEGOZIO);
-			}
+			final ViewResult idAziende = couchDb.queryView(new ViewQuery().allDocs().startKey(ID_AZIENDA).endKey(ID_AZIENDA + "\ufff0"));
+			for (final Row row : idAziende.getRows()) {
+				final String docId = row.getId();
+				final String codiceAzienda = docId.split("/", 2)[1];
+				final String query = getSelectFromAncl200f(codiceAzienda);
+				System.out.println(query);
 
-			for (final String tipoAzienda : codiciAzienda.keySet()) {
-				for (final String codiceAzienda : codiciAzienda.get(tipoAzienda)) {
-					final String query = getSelectFromAncl200f(codiceAzienda);
-					System.out.println(query);
-					final ResultSet ancl200f = statement.executeQuery(query);
-					while (ancl200f.next()) {
-						boolean aggiornaAzienda = false;
-						final String docId = "azienda/" + codiceAzienda;
-						final ObjectNode azienda;
-						{
-							ObjectNode docAzienda;
-							try {
-								docAzienda = couchDb.get(ObjectNode.class, docId);
-							} catch (final DocumentNotFoundException ex) {
-								docAzienda = JsonNodeFactory.instance.objectNode();
-								aggiornaAzienda = true;
-							}
-							azienda = docAzienda;
-						}
-						{
-							final JsonNode oldTipo = azienda.get("tipo");
-							if (oldTipo == null || !tipoAzienda.equals(oldTipo.getTextValue())) {
-								azienda.put("tipo", tipoAzienda);
-								aggiornaAzienda = true;
-							}
-						}
-						aggiornaAzienda = setString(ancl200f, "nome", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "indirizzo", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "comune", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "provincia", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "cap", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "note", azienda) || aggiornaAzienda;
-						aggiornaAzienda = setString(ancl200f, "nazione", azienda) || aggiornaAzienda;
+				final ResultSet ancl200f = statement.executeQuery(query);
+				while (ancl200f.next()) {
+					final ObjectNode azienda = couchDb.get(ObjectNode.class, docId);
+					boolean aggiornaAzienda = false;
+					aggiornaAzienda = setString(ancl200f, "nome", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "indirizzo", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "comune", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "provincia", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "cap", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "note", azienda) || aggiornaAzienda;
+					aggiornaAzienda = setString(ancl200f, "nazione", azienda) || aggiornaAzienda;
 
+					{
 						final ArrayNode contatti = JsonNodeFactory.instance.arrayNode();
 						{
 							final String val = ancl200f.getString("TELEFONO");
@@ -204,11 +184,8 @@ public class As400Importer {
 						{
 							final String val = ancl200f.getString("FAX");
 							final String fax = val == null ? "" : val.trim();
-							if (fax.matches("[a-zA-Z]")) {
-								contatti.add(fax);
-							}
-							else if (!fax.isEmpty()) {
-								contatti.add(fax + " (fax)");
+							if (!fax.isEmpty()) {
+								contatti.add(fax.matches("[a-zA-Z]") ? fax : fax+" (fax)");
 							}
 						}
 						{
@@ -229,16 +206,11 @@ public class As400Importer {
 								aggiornaAzienda = azienda.remove("contatti") != null || aggiornaAzienda;
 							}
 						}
+					}
 
-						if (aggiornaAzienda) {
-							System.out.println("Aggiorno " + docId);
-							if (azienda.has("_rev")) {
-								couchDb.update(azienda);
-							}
-							else {
-								couchDb.create(docId, azienda);
-							}
-						}
+					if (aggiornaAzienda) {
+						System.out.println("Aggiorno " + docId);
+						couchDb.update(azienda);
 					}
 				}
 			}
