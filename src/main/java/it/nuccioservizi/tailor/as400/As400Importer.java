@@ -150,11 +150,7 @@ public class As400Importer {
 		/*
 		 * Importazione aziende (ANCL200F).
 		 */
-		final Map<String, ObjectNode> aziende;
 		{
-			final int numAziende = CLIENTI_MAGAZZINO.length + CLIENTI_NEGOZIO.length + 1;
-			aziende = new HashMap<String, ObjectNode>(numAziende);
-
 			final Map<String, String[]> codiciAzienda = new HashMap<String, String[]>(3);
 			{
 				final String[] magazzini = Arrays.copyOf(CLIENTI_MAGAZZINO, CLIENTI_MAGAZZINO.length + 1);
@@ -169,59 +165,74 @@ public class As400Importer {
 					System.out.println(query);
 					final ResultSet ancl200f = statement.executeQuery(query);
 					while (ancl200f.next()) {
-						final ObjectNode azienda = JsonNodeFactory.instance.objectNode();
-						azienda.put("tipo", tipoAzienda);
-						setString(ancl200f, "nome", azienda);
-						setString(ancl200f, "indirizzo", azienda);
-						setString(ancl200f, "comune", azienda);
-						setString(ancl200f, "provincia", azienda);
-						setString(ancl200f, "cap", azienda);
-						setString(ancl200f, "note", azienda);
-						setString(ancl200f, "nazione", azienda);
-
-						final ArrayNode contatti = azienda.putArray("contatti");
-						final String telefono = ancl200f.getString("TELEFONO").trim();
-						if (!telefono.isEmpty()) {
-							contatti.add(telefono);
-						}
-						final String fax = ancl200f.getString("FAX").trim();
-						if (fax.matches("[a-zA-Z]")) {
-							contatti.add(fax);
-						}
-						else if (!fax.isEmpty()) {
-							contatti.add(fax + " (fax)");
-						}
-						aziende.put(codiceAzienda, azienda);
-						System.out.println(codiceAzienda + "\t" + azienda.toString());
-
-						final String docId = "azienda/" + codiceAzienda;
-
 						boolean aggiornaAzienda = false;
-						final ObjectNode aziendaCouchDb;
+						final String docId = "azienda/" + codiceAzienda;
+						final ObjectNode azienda;
 						{
-							{
-								ObjectNode docAzienda = null;
-								try {
-									docAzienda = couchDb.get(ObjectNode.class, docId);
-								} catch (final DocumentNotFoundException ex) {
+							ObjectNode docAzienda;
+							try {
+								docAzienda = couchDb.get(ObjectNode.class, docId);
+							} catch (final DocumentNotFoundException ex) {
+								docAzienda = JsonNodeFactory.instance.objectNode();
+								aggiornaAzienda = true;
+							}
+							azienda = docAzienda;
+						}
+						{
+							final JsonNode oldTipo = azienda.get("tipo");
+							if (oldTipo == null || !tipoAzienda.equals(oldTipo.getTextValue())) {
+								azienda.put("tipo", tipoAzienda);
+								aggiornaAzienda = true;
+							}
+						}
+						aggiornaAzienda = setString(ancl200f, "nome", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "indirizzo", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "comune", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "provincia", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "cap", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "note", azienda) || aggiornaAzienda;
+						aggiornaAzienda = setString(ancl200f, "nazione", azienda) || aggiornaAzienda;
+
+						final ArrayNode contatti = JsonNodeFactory.instance.arrayNode();
+						{
+							final String val = ancl200f.getString("TELEFONO");
+							final String telefono = val == null ? "" : val.trim();
+							if (!telefono.isEmpty()) {
+								contatti.add(telefono);
+							}
+						}
+						{
+							final String val = ancl200f.getString("FAX");
+							final String fax = val == null ? "" : val.trim();
+							if (fax.matches("[a-zA-Z]")) {
+								contatti.add(fax);
+							}
+							else if (!fax.isEmpty()) {
+								contatti.add(fax + " (fax)");
+							}
+						}
+						{
+							final JsonNode oc = azienda.get("contatti");
+
+							if (contatti.size() > 0) {
+								if (oc == null || !oc.isArray() || oc.size() != contatti.size()) {
 									aggiornaAzienda = true;
 								}
-								aziendaCouchDb = docAzienda;
+								else {
+									for (int i = 0, n = contatti.size(); aggiornaAzienda == false && i < n; ++i) {
+										aggiornaAzienda = !contatti.get(i).equals(oc.get(i)) || aggiornaAzienda;
+									}
+								}
+								azienda.put("contatti", contatti);
 							}
-							if (!aggiornaAzienda) {
-								aggiornaAzienda = azienda.size() + 2 != aziendaCouchDb.size()
-										|| !(sameText(azienda, aziendaCouchDb, "tipo") && sameText(azienda, aziendaCouchDb, "nome")
-												&& sameText(azienda, aziendaCouchDb, "indirizzo") && sameText(azienda, aziendaCouchDb, "comune")
-												&& sameText(azienda, aziendaCouchDb, "provincia") && sameText(azienda, aziendaCouchDb, "cap")
-												&& sameText(azienda, aziendaCouchDb, "note") && sameText(azienda, aziendaCouchDb, "nazione") && sameTextArray(
-												azienda, aziendaCouchDb, "contatti"));
+							else {
+								aggiornaAzienda = azienda.remove("contatti") != null || aggiornaAzienda;
 							}
 						}
+
 						if (aggiornaAzienda) {
 							System.out.println("Aggiorno " + docId);
-							if (aziendaCouchDb != null) {
-								azienda.put("_id", docId);
-								azienda.put("_rev", aziendaCouchDb.get("_rev").getTextValue());
+							if (azienda.has("_rev")) {
 								couchDb.update(azienda);
 							}
 							else {
@@ -716,36 +727,22 @@ public class As400Importer {
 		return hasCampo == b.has(campo) && (!hasCampo || a.get(campo).getTextValue().equals(b.get(campo).getTextValue()));
 	}
 
-	private static boolean sameTextArray(final ObjectNode a, final ObjectNode b, final String campo) {
-		final boolean hasCampo = a.has(campo);
-		if (hasCampo != b.has(campo)) {
-			return false;
-		}
-		if (!hasCampo) {
-			return true;
-		}
-		final ArrayNode x = (ArrayNode) a.get(campo);
-		final ArrayNode y = (ArrayNode) b.get(campo);
-		final int n = x.size();
-		if (n != y.size()) {
-			return false;
-		}
-		for (int i = 0; i < n; ++i) {
-			if (!x.get(i).getTextValue().equals(y.get(i).getTextValue())) {
-				return false;
+	private static boolean setString(final ResultSet record, final String campo, final ObjectNode obj) throws SQLException {
+		final String newValue;
+		{
+			String v = record.getString(campo.toUpperCase());
+			if (v != null) {
+				v = v.trim();
 			}
+			newValue = v == null || v.isEmpty() ? null : v;
 		}
-		return true;
-	}
 
-	private static void setString(final ResultSet record, final String campo, final ObjectNode obj) throws SQLException {
-		final String value = record.getString(campo.toUpperCase());
-		if (value != null) {
-			final String trimmed = value.trim();
-			if (!trimmed.isEmpty()) {
-				obj.put(campo, trimmed);
-			}
+		final JsonNode oldValue = obj.remove(campo);
+		if (newValue != null) {
+			obj.put(campo, newValue);
+			return oldValue == null || !oldValue.isTextual() || !newValue.equals(oldValue.getTextValue());
 		}
+		return oldValue != null;
 	}
 
 	private static String token(final String tokens, final int tokenIndex, final int tokenLength) {
