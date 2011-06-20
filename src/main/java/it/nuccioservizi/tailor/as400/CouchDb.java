@@ -24,6 +24,7 @@ public class CouchDb {
 				.port(Integer.valueOf(properties.get(Property.COUCHDB_PORT)))
 				.username(properties.get(Property.COUCHDB_USERNAME))
 				.password(properties.get(Property.COUCHDB_PASSWORD))
+				.socketTimeout(30000)
 				.build();
 		return new StdCouchDbInstance(http).createConnector(properties.get(Property.COUCHDB_DB), false);
 	}
