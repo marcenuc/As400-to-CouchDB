@@ -158,7 +158,7 @@ public class As400Importer {
 				final String docId = row.getId();
 				final String codiceAzienda = docId.split("/", 2)[1];
 				final String query = getSelectFromAncl200f(codiceAzienda);
-				System.out.println(query);
+				// System.out.println(query);
 
 				final ResultSet ancl200f = statement.executeQuery(query);
 				while (ancl200f.next()) {
@@ -185,7 +185,7 @@ public class As400Importer {
 							final String val = ancl200f.getString("FAX");
 							final String fax = val == null ? "" : val.trim();
 							if (!fax.isEmpty()) {
-								contatti.add(fax.matches("[a-zA-Z]") ? fax : fax+" (fax)");
+								contatti.add(fax.matches("[a-zA-Z]") ? fax : fax + " (fax)");
 							}
 						}
 						{
@@ -226,18 +226,18 @@ public class As400Importer {
 			{
 				final Pattern patternKeyScalarino = Pattern.compile("^SC([AB])(\\d)$");
 
-				System.out.println(SELECT_SCALARINI_FROM_TABELL01);
+				// System.out.println(SELECT_SCALARINI_FROM_TABELL01);
 				final ResultSet tabell01 = statement.executeQuery(SELECT_SCALARINI_FROM_TABELL01);
 				while (tabell01.next()) {
 					final String key = tabell01.getString("KEY");
 					final Matcher keyMatcher = patternKeyScalarino.matcher(key);
 					if (!keyMatcher.matches()) {
-						System.out.println("CODICE SCALARINO IGNOTO: T$KEY=" + key);
+						System.out.println("TABELL01 CODICE SCALARINO IGNOTO: T$KEY=" + key);
 						continue;
 					}
 					final String values = tabell01.getString("VALUES");
 					if (values == null || values.trim().isEmpty()) {
-						System.out.println("VALORI SCALARINO VUOTI: T$KEY=" + key);
+						System.out.println("TABELL01 VALORI SCALARINO VUOTI: T$KEY=" + key);
 						continue;
 					}
 
@@ -386,7 +386,7 @@ public class As400Importer {
 					modelliCouchDb = aggiornaModelli ? null : (ObjectNode) docModelliCouchDb.get("lista");
 				}
 
-				System.out.println(SELECT_FROM_ANMOD00F);
+				// System.out.println(SELECT_FROM_ANMOD00F);
 				final ResultSet anmod00f = statement.executeQuery(SELECT_FROM_ANMOD00F);
 				while (anmod00f.next()) {
 					final String stagione = anmod00f.getString("STAGIONE");
@@ -397,14 +397,14 @@ public class As400Importer {
 					{
 						final String des = anmod00f.getString("DESCRIZIONE");
 						if (des == null || des.trim().isEmpty()) {
-							System.out.println("MANCA DESCRIZIONE: stagione=" + stagione + ", modello=" + modello + ".");
+							System.out.println("ANMOD00F MANCA DESCRIZIONE: stagione=" + stagione + ", modello=" + modello + ".");
 							continue;
 						}
 						descrizione = des.trim();
 					}
 					final String scalarino = anmod00f.getString("SCALARINO");
 					if (scalarino == null || scalarino.isEmpty()) {
-						System.out.println("MANCA SCALARINO: stagione=" + stagione + ", modello=" + modello + ", descrizione=" + descrizione
+						System.out.println("ANMOD00F MANCA SCALARINO: stagione=" + stagione + ", modello=" + modello + ", descrizione=" + descrizione
 								+ ".");
 						continue;
 					}
@@ -439,7 +439,7 @@ public class As400Importer {
 		 */
 		final Map<String, Long> listino = new HashMap<String, Long>(100000);
 		{
-			System.out.println(SELECT_FROM_ANALIS01);
+			// System.out.println(SELECT_FROM_ANALIS01);
 			final ResultSet analis01 = statement.executeQuery(SELECT_FROM_ANALIS01);
 			while (analis01.next()) {
 				final String stagione = analis01.getString("STAGIONE");
@@ -450,7 +450,6 @@ public class As400Importer {
 				final Long costo = analis01.getBigDecimal("COSTO").multiply(CENTO).longValueExact();
 				listino.put(stagione + modello + articolo, costo);
 			}
-			System.out.println(listino.size());
 		}
 
 		/*
@@ -466,7 +465,7 @@ public class As400Importer {
 					final ArrayNode movimenti = inventarioMagazzino.putArray("movimenti");
 
 					final String query = getSelectFromOrdet00f(codiceCliente);
-					System.out.println(query);
+					// System.out.println(query);
 
 					final ResultSet ordet00f = statement.executeQuery(query);
 					while (ordet00f.next()) {
@@ -479,19 +478,19 @@ public class As400Importer {
 
 						final ArrayNode desscalModello = (ArrayNode) modelli.get(stagione + modello);
 						if (desscalModello == null) {
-							System.out.println("MODELLO NON IN ANAGRAFE: stagione=" + stagione + ", modello=" + modello + ".");
+							System.out.println("ORDET00F MODELLO NON IN ANAGRAFE: stagione=" + stagione + ", modello=" + modello + ".");
 						}
 						else {
 							final String scalarino = ordet00f.getString("SCALARINO");
 							final String scalarinoMagazzino = desscalModello.get(1).toString();
 							if (!scalarino.equals(scalarinoMagazzino)) {
-								System.out.println("SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello
+								System.out.println("ORDET00F SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello
 										+ ", scalarino=" + scalarinoMagazzino + ". Scalarino in anagrafe=" + scalarino + ".");
 							}
 							else {
 								final Long costo = listino.get(stagione + modello + articolo);
 								if (costo == null) {
-									System.out.println("ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
+									System.out.println("ORDET00F ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
 											+ articolo + ".");
 								}
 
@@ -567,7 +566,7 @@ public class As400Importer {
 
 				final ObjectNode descrizioniScalarino = (ObjectNode) scalarini.get("descrizioni");
 
-				System.out.println(SELECT_FROM_SALMOD);
+				// System.out.println(SELECT_FROM_SALMOD);
 				final ResultSet salmod = statement.executeQuery(SELECT_FROM_SALMOD);
 				while (salmod.next()) {
 					final String stagione = salmod.getString("STAGIONE");
@@ -579,13 +578,13 @@ public class As400Importer {
 
 					final JsonNode desscalModello = modelli.get(stagione + modello);
 					if (desscalModello == null) {
-						System.out.println("MODELLO NON IN ANAGRAFE: stagione=" + stagione + ", modello=" + modello + ".");
+						System.out.println("SALMOD MODELLO NON IN ANAGRAFE: stagione=" + stagione + ", modello=" + modello + ".");
 					}
 					else {
 						final String scalarino = salmod.getString("SCALARINO");
 						final String scalarinoMagazzino = desscalModello.get(1).toString();
 						if (!scalarino.equals(scalarinoMagazzino)) {
-							System.out.println("SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello + ", scalarino="
+							System.out.println("SALMOD SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello + ", scalarino="
 									+ scalarinoMagazzino + ". Scalarino in anagrafe=" + scalarino + ".");
 						}
 						else {
@@ -603,7 +602,7 @@ public class As400Importer {
 
 								final Long costo = listino.get(stagione + modello + articolo);
 								if (costo == null) {
-									System.out.println("ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
+									System.out.println("SALMOD ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
 											+ articolo + ".");
 								}
 								else {
