@@ -33,7 +33,7 @@ public class As400Importer {
 	private static final String			ID_MODELLI_E_SCALARINI					= "modelli_e_scalarini";
 	private static final String			ID_AZIENDA											= "azienda/";
 
-	private static final String[]		CLIENTI_MAGAZZINO								= { "019999", "099990" };
+	private static final String[]		CLIENTI_MAGAZZINO								= { "019999", "099990", "099991" };
 	private static final String			CLIENTE_DISPONIBILE							= "019998";
 
 	private static final String			SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
