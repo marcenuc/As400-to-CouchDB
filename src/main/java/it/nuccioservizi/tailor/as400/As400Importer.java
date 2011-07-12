@@ -8,10 +8,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,38 +29,147 @@ import org.ektorp.ViewResult.Row;
 
 public class As400Importer {
 
-	private static final BigDecimal	CENTO														= new BigDecimal(100);
+	private static class RigaInventario {
+		final String	codiceABarre;
+		final long		quantità;
+		final String	codiceAzienda;
+		final int			disponibile;
 
-	private static final String			ID_SCALARINI										= "scalarini";
-	private static final String			ID_MODELLI_E_SCALARINI					= "modelli_e_scalarini";
-	private static final String			ID_AZIENDA											= "azienda/";
+		RigaInventario(final String codiceABarre, final long quantità, final String codiceAzienda, final int disponibile) {
+			this.codiceABarre = codiceABarre;
+			this.quantità = quantità;
+			this.codiceAzienda = codiceAzienda;
+			this.disponibile = disponibile;
+		}
 
-	private static final String[]		CLIENTI_MAGAZZINO								= { "019999", "099990", "099991" };
-	private static final String			CLIENTE_DISPONIBILE							= "019998";
+		@Override
+		public boolean equals(final Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (obj == null) {
+				return false;
+			}
+			if (getClass() != obj.getClass()) {
+				return false;
+			}
+			final RigaInventario other = (RigaInventario) obj;
+			if (codiceABarre == null) {
+				if (other.codiceABarre != null) {
+					return false;
+				}
+			}
+			else if (!codiceABarre.equals(other.codiceABarre)) {
+				return false;
+			}
+			if (codiceAzienda == null) {
+				if (other.codiceAzienda != null) {
+					return false;
+				}
+			}
+			else if (!codiceAzienda.equals(other.codiceAzienda)) {
+				return false;
+			}
+			if (disponibile != other.disponibile) {
+				return false;
+			}
+			if (quantità != other.quantità) {
+				return false;
+			}
+			return true;
+		}
 
-	private static final String			SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
-																																			+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
-																																			+ " STAGLI AS DESCRIZIONE_TAGLIA,"
-																																			+ " SSCALA AS SCALARINO, SQUANT AS QTA FROM ABB_DATV3.SALMOD"
-																																			+ " WHERE SCODMA='D' AND SCLIDI=2 AND SQUANT>0";
+		@Override
+		public int hashCode() {
+			final int prime = 31;
+			int result = 1;
+			result = prime * result + (codiceABarre == null ? 0 : codiceABarre.hashCode());
+			result = prime * result + (codiceAzienda == null ? 0 : codiceAzienda.hashCode());
+			result = prime * result + disponibile;
+			result = prime * result + (int) (quantità ^ quantità >>> 32);
+			return result;
+		}
 
-	private static final String			SELECT_FROM_ANMOD00F						= "SELECT ANSTAG AS STAGIONE, ANMODE AS MODELLO,"
-																																			+ " ANDESC AS DESCRIZIONE, ANSCAL AS SCALARINO"
-																																			+ " FROM ABB_DATV3.ANMOD00F WHERE ANARTI='0'";
+		public ArrayNode toArrayNode() {
+			final ArrayNode a = JsonNodeFactory.instance.arrayNode();
+			a.add(codiceABarre);
+			a.add(quantità);
+			a.add(codiceAzienda);
+			a.add(disponibile);
+			return a;
+		}
 
-	private static final String			SELECT_SCALARINI_FROM_TABELL01	= "SELECT T$KEY AS KEY, T$CAMP AS VALUES"
-																																			+ " FROM ABB_DATV3.TABELL01 WHERE T$KEY LIKE 'SC%'";
+	}
 
-	private static final String			SELECT_FROM_ANALIS01						= "SELECT CSTGAL AS STAGIONE, CMODAL AS MODELLO,"
-																																			+ " CARTAL AS ARTICOLO, ALP1$ AS COSTO"
-																																			+ " FROM ABB_DATV3.ANALIS01 WHERE TIPR LIKE 'A' AND VERLAL=1";
+	private static class RigaInventarioComparator implements Comparator<RigaInventario> {
+		@Override
+		public int compare(final RigaInventario a, final RigaInventario b) {
+			final int cmpArt = a.codiceABarre.substring(3).compareTo(b.codiceABarre.substring(3));
+			if (cmpArt != 0) {
+				return cmpArt;
+			}
+			final int cmpStag = a.codiceABarre.substring(0, 3).compareTo(b.codiceABarre.substring(0, 3));
+			if (cmpStag != 0) {
+				return cmpStag;
+			}
+			final int cmpAzienda = a.codiceAzienda.compareTo(b.codiceAzienda);
+			if (cmpAzienda != 0) {
+				return cmpAzienda;
+			}
+			final int cmpProd = a.disponibile - b.disponibile;
+			if (cmpProd != 0) {
+				return cmpProd;
+			}
+			final long d = a.quantità - b.quantità;
+			return d < 0 ? -1 : d > 0 ? 1 : 0;
+		}
+	}
 
-	private static final int				LENGTH_CODICE_STAGIONE					= 3;
-	private static final int				LENGTH_CODICE_MODELLO						= 5;
-	private static final int				LENGTH_CODICE_ARTICOLO					= 4;
-	private static final int				LENGTH_CODICE_COLORE						= 4;
-	private static final int				LENGTH_CODICE_TAGLIA						= 2;
-	private static final int				LENGTH_DESCRIZIONE_TAGLIA				= 3;
+	private static final BigDecimal						CENTO														= new BigDecimal(100);
+	private static final String								ID_SCALARINI										= "scalarini";
+	private static final String								ID_MODELLI_E_SCALARINI					= "modelli_e_scalarini";
+
+	private static final String								ID_AZIENDA											= "azienda/";
+	private static final String[]							CLIENTI_MAGAZZINO								= { "019999", "099990", "099991" };
+
+	private static final String								CLIENTE_DISPONIBILE							= "019998";
+
+	private static final String								SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
+																																								+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
+																																								+ " STAGLI AS DESCRIZIONE_TAGLIA,"
+																																								+ " SSCALA AS SCALARINO, SUM(SQUANT) AS QTA FROM ABB_DATV3.SALMOD"
+																																								+ " WHERE SCODMA='D' AND SCLIDI=2 AND SQUANT>0"
+																																								+ " GROUP BY SSTAGI, SMODEL, SARTIC, SCOLOR, STAGLI, SSCALA";
+
+	private static final String								SELECT_FROM_ANMOD00F						= "SELECT ANSTAG AS STAGIONE, ANMODE AS MODELLO,"
+																																								+ " ANDESC AS DESCRIZIONE, ANSCAL AS SCALARINO"
+																																								+ " FROM ABB_DATV3.ANMOD00F WHERE ANARTI='0'";
+
+	private static final String								SELECT_SCALARINI_FROM_TABELL01	= "SELECT T$KEY AS KEY, T$CAMP AS VALUES"
+																																								+ " FROM ABB_DATV3.TABELL01 WHERE T$KEY LIKE 'SC%'";
+
+	private static final String								SELECT_FROM_ANALIS01						= "SELECT CSTGAL AS STAGIONE, CMODAL AS MODELLO,"
+																																								+ " CARTAL AS ARTICOLO, ALP1$ AS COSTO"
+																																								+ " FROM ABB_DATV3.ANALIS01 WHERE TIPR LIKE 'A' AND VERLAL=1";
+	private static final int									LENGTH_CODICE_STAGIONE					= 3;
+	private static final int									LENGTH_CODICE_MODELLO						= 5;
+	private static final int									LENGTH_CODICE_ARTICOLO					= 4;
+	private static final int									LENGTH_CODICE_COLORE						= 4;
+	private static final int									LENGTH_CODICE_TAGLIA						= 2;
+
+	private static final int									LENGTH_DESCRIZIONE_TAGLIA				= 3;
+	private static final ArrayNode						descrizioniDisponibile;
+	private static final Map<String, Integer>	statiArticolo;
+
+	static {
+		descrizioniDisponibile = JsonNodeFactory.instance.arrayNode();
+		descrizioniDisponibile.add("IN_PRODUZIONE");
+		descrizioniDisponibile.add("PRONTO");
+		statiArticolo = new HashMap<String, Integer>();
+		for (int i = 0, n = descrizioniDisponibile.size(); i < n; ++i) {
+			statiArticolo.put(descrizioniDisponibile.get(i).getTextValue(), i);
+		}
+	}
 
 	private static boolean checkCodiciSM(final String stagione, final String modello) {
 		if (stagione == null || stagione.length() != LENGTH_CODICE_STAGIONE) {
@@ -99,18 +210,19 @@ public class As400Importer {
 	}
 
 	private static String getSelectFromOrdet00f(final String codiceCliente) {
-		return "SELECT DESTAG AS STAGIONE, DEMODE AS MODELLO, DEARTI AS ARTICOLO, DECOLO AS COLORE, DESCAD AS SCALARINO,"
-				+ "   DEQT01 AS QTA0, DEQT02 AS QTA1, DEQT03 AS QTA2, DEQT04 AS QTA3, DEQT05 AS QTA4, DEQT06 AS QTA5,"
-				+ "   DEQT07 AS QTA6, DEQT08 AS QTA7, DEQT09 AS QTA8, DEQT10 AS QTA9, DEQT11 AS QTA10, DEQT12 AS QTA11,"
-				+ "   DESTA2 AS STATO_ARTICOLO FROM ABB_DATV3.ORDET00F WHERE (DESTA2='1' OR DESTA2='2') AND DETIPR LIKE 'A' AND DECLIE='"
-				+ codiceCliente + "'";
+		return "SELECT DESTAG AS STAGIONE, DEMODE AS MODELLO, DEARTI AS ARTICOLO, DECOLO AS COLORE, DESCAD AS SCALARINO, DESTA2 AS STATO_ARTICOLO,"
+				+ "   SUM(DEQT01) AS QTA0, SUM(DEQT02) AS QTA1, SUM(DEQT03) AS QTA2, SUM(DEQT04) AS QTA3, SUM(DEQT05) AS QTA4, SUM(DEQT06) AS QTA5,"
+				+ "   SUM(DEQT07) AS QTA6, SUM(DEQT08) AS QTA7, SUM(DEQT09) AS QTA8, SUM(DEQT10) AS QTA9, SUM(DEQT11) AS QTA10, SUM(DEQT12) AS QTA11"
+				+ "   FROM ABB_DATV3.ORDET00F WHERE (DESTA2='1' OR DESTA2='2') AND DETIPR LIKE 'A' AND DECLIE='"
+				+ codiceCliente
+				+ "' GROUP BY DESTAG, DEMODE, DEARTI, DECOLO, DESCAD, DESTA2";
 	}
 
-	private static String getStatoArticolo(final String statoPolmone) {
+	private static Integer getStatoArticolo(final String statoPolmone) {
 		if (statoPolmone.equals("1"))
-			return "IN_PRODUZIONE";
+			return statiArticolo.get("IN_PRODUZIONE");
 		if (statoPolmone.equals("2"))
-			return "PRONTO";
+			return statiArticolo.get("PRONTO");
 		throw new IllegalArgumentException("Valore ORDET00F.DESTA2 sconosciuto: " + statoPolmone);
 	}
 
@@ -404,8 +516,8 @@ public class As400Importer {
 					}
 					final String scalarino = anmod00f.getString("SCALARINO");
 					if (scalarino == null || scalarino.isEmpty()) {
-						System.out.println("ANMOD00F MANCA SCALARINO: stagione=" + stagione + ", modello=" + modello + ", descrizione=" + descrizione
-								+ ".");
+						System.out.println("ANMOD00F MANCA SCALARINO: stagione=" + stagione + ", modello=" + modello + ", descrizione="
+								+ descrizione + ".");
 						continue;
 					}
 					final String codiceSM = stagione + modello;
@@ -452,6 +564,15 @@ public class As400Importer {
 			}
 		}
 
+		final TreeSet<RigaInventario> grandeInventario = new TreeSet<RigaInventario>(new RigaInventarioComparator());
+		boolean aggiornaGrandeInventario = false;
+		final int idx_codice_a_barre = 0;
+		final int idx_quantità = idx_codice_a_barre + 1;
+		final int idx_disponibile = idx_quantità + 1;
+		final ObjectNode indiciCampo = JsonNodeFactory.instance.objectNode();
+		indiciCampo.put("codice_a_barre", idx_codice_a_barre);
+		indiciCampo.put("quantità", idx_quantità);
+		indiciCampo.put("disponibile", idx_disponibile);
 		/*
 		 * Importazione ORDET00F.
 		 */
@@ -461,8 +582,10 @@ public class As400Importer {
 			for (final String codiceCliente : CLIENTI_MAGAZZINO) {
 				final ObjectNode inventarioMagazzino = JsonNodeFactory.instance.objectNode();
 				{
-					inventarioMagazzino.put("causale", "INVENTARIO");
-					final ArrayNode movimenti = inventarioMagazzino.putArray("movimenti");
+					inventarioMagazzino.put("indici_campo", indiciCampo);
+					inventarioMagazzino.put("descrizioni_disponibile", descrizioniDisponibile);
+					final ArrayNode inventario = inventarioMagazzino.putArray("inventario");
+					inventarioMagazzino.put("data", dataInventario);
 
 					final String query = getSelectFromOrdet00f(codiceCliente);
 					// System.out.println(query);
@@ -490,25 +613,23 @@ public class As400Importer {
 							else {
 								final Long costo = listino.get(stagione + modello + articolo);
 								if (costo == null) {
-									System.out.println("ORDET00F ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
-											+ articolo + ".");
+									System.out.println("ORDET00F ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello
+											+ ", articolo=" + articolo + ".");
 								}
 
-								final String statoArticolo = getStatoArticolo(ordet00f.getString("STATO_ARTICOLO"));
+								final Integer disponibile = getStatoArticolo(ordet00f.getString("STATO_ARTICOLO"));
 								final ArrayNode posizioneCodiciScalarino = (ArrayNode) posizioniCodiciScalarino.get(scalarino);
 
 								for (int i = 0, n = posizioneCodiciScalarino.size(); i < n; ++i) {
 									final long quantità = ordet00f.getBigDecimal("QTA" + i).longValueExact();
 									if (quantità > 0) {
-										final ObjectNode dettaglio = movimenti.addObject();
-										dettaglio.put("codice_a_barre", stagione + modello + articolo + colore
-												+ padTaglia(posizioneCodiciScalarino.get(i).getTextValue()));
-										dettaglio.put("descrizione", desscalModello.get(0).getTextValue());
-										dettaglio.put("quantità", quantità);
-										dettaglio.put("stato_articolo", statoArticolo);
-										if (costo != null) {
-											dettaglio.put("costo_di_acquisto", costo);
-										}
+										final ArrayNode dettaglio = inventario.addArray();
+										final String codiceABarre = stagione + modello + articolo + colore
+												+ padTaglia(posizioneCodiciScalarino.get(i).getTextValue());
+										dettaglio.add(codiceABarre);
+										dettaglio.add(quantità);
+										dettaglio.add(disponibile);
+										grandeInventario.add(new RigaInventario(codiceABarre, quantità, codiceCliente, disponibile));
 									}
 								}
 							}
@@ -517,40 +638,43 @@ public class As400Importer {
 				}
 
 				boolean aggiornaInventario = false;
-				final ObjectNode inventarioCouchDb;
+				final ObjectNode inventarioMagazzinoCouchDb;
 				{
 					{
 						ObjectNode docInventarioCouchDb = null;
 						try {
-							docInventarioCouchDb = CouchDb.getLatest(couchDb, "movimenti", codiceCliente);
+							docInventarioCouchDb = couchDb.get(ObjectNode.class, "inventario/" + codiceCliente);
 						} catch (final DocumentNotFoundException ex) {
 							aggiornaInventario = true;
 						}
-						inventarioCouchDb = docInventarioCouchDb;
+						inventarioMagazzinoCouchDb = docInventarioCouchDb;
 					}
 
 					if (!aggiornaInventario) {
-						final ArrayNode movimentiAs400 = (ArrayNode) inventarioMagazzino.get("movimenti");
-						final ArrayNode movimentiCouchDb = (ArrayNode) inventarioCouchDb.get("movimenti");
-						if (movimentiAs400 == null) {
-							aggiornaInventario = movimentiCouchDb != null;
+						final ArrayNode inventarioAs400 = (ArrayNode) inventarioMagazzino.get("inventario");
+						final ArrayNode inventarioCouchDb = (ArrayNode) inventarioMagazzinoCouchDb.get("inventario");
+						if (inventarioAs400 == null) {
+							aggiornaInventario = inventarioCouchDb != null;
 						}
-						else if (movimentiCouchDb == null || movimentiAs400.size() != movimentiCouchDb.size()) {
+						else if (inventarioCouchDb == null || inventarioAs400.size() != inventarioCouchDb.size()) {
 							aggiornaInventario = true;
 						}
 						else {
-							for (int i = 0, n = movimentiAs400.size(); i < n && !aggiornaInventario; ++i) {
-								final ObjectNode a = (ObjectNode) movimentiAs400.get(i);
-								final ObjectNode b = (ObjectNode) movimentiCouchDb.get(i);
-								aggiornaInventario = !(sameText(a, b, "codice_a_barre") && sameText(a, b, "descrizione")
-										&& sameLong(a, b, "costo_di_acquisto") && sameText(a, b, "stato_articolo") && sameLong(a, b, "quantità"));
+							for (int i = 0, n = inventarioAs400.size(); i < n && !aggiornaInventario; ++i) {
+								final ArrayNode a = (ArrayNode) inventarioAs400.get(i);
+								final ArrayNode b = (ArrayNode) inventarioCouchDb.get(i);
+								aggiornaInventario = a.size() != b.size() || //
+										!a.get(idx_codice_a_barre).getTextValue().equals(b.get(idx_codice_a_barre).getTextValue()) || //
+										a.get(idx_quantità).getLongValue() != b.get(idx_quantità).getLongValue() || //
+										a.get(idx_disponibile).getIntValue() != b.get(idx_disponibile).getIntValue();
 							}
 						}
 					}
 				}
 
 				if (aggiornaInventario) {
-					salvaInventario(couchDb, dataInventario, codiceCliente, inventarioMagazzino, inventarioCouchDb);
+					salvaInventario(couchDb, codiceCliente, inventarioMagazzino, inventarioMagazzinoCouchDb);
+					aggiornaGrandeInventario = true;
 				}
 			}
 		}
@@ -561,10 +685,13 @@ public class As400Importer {
 		{
 			final ObjectNode inventarioDisponibile = JsonNodeFactory.instance.objectNode();
 			{
-				inventarioDisponibile.put("causale", "INVENTARIO");
-				final ArrayNode movimenti = inventarioDisponibile.putArray("movimenti");
+				inventarioDisponibile.put("indici_campo", indiciCampo);
+				inventarioDisponibile.put("descrizioni_disponibile", descrizioniDisponibile);
+				final ArrayNode inventario = inventarioDisponibile.putArray("inventario");
+				inventarioDisponibile.put("data", dataInventario);
 
 				final ObjectNode descrizioniScalarino = (ObjectNode) scalarini.get("descrizioni");
+				final Integer disponibile = statiArticolo.get("PRONTO");
 
 				// System.out.println(SELECT_FROM_SALMOD);
 				final ResultSet salmod = statement.executeQuery(SELECT_FROM_SALMOD);
@@ -584,30 +711,21 @@ public class As400Importer {
 						final String scalarino = salmod.getString("SCALARINO");
 						final String scalarinoMagazzino = desscalModello.get(1).toString();
 						if (!scalarino.equals(scalarinoMagazzino)) {
-							System.out.println("SALMOD SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello + ", scalarino="
-									+ scalarinoMagazzino + ". Scalarino in anagrafe=" + scalarino + ".");
+							System.out.println("SALMOD SCALARINO IN ANAGRAFE DIVERSO: stagione=" + stagione + ", modello=" + modello
+									+ ", scalarino=" + scalarinoMagazzino + ". Scalarino in anagrafe=" + scalarino + ".");
 						}
 						else {
 							final ObjectNode descrizioniTaglie = (ObjectNode) descrizioniScalarino.get(scalarino);
 							final long quantità = salmod.getBigDecimal("QTA").longValueExact();
 							if (quantità > 0) {
-								final ObjectNode dettaglio = movimenti.addObject();
-
+								final ArrayNode dettaglio = inventario.addArray();
 								final String descrizioneTaglia = salmod.getString("DESCRIZIONE_TAGLIA").trim();
-								dettaglio.put("codice_a_barre",
-										stagione + modello + articolo + colore + padTaglia(descrizioniTaglie.get(descrizioneTaglia).getTextValue()));
-								dettaglio.put("descrizione", desscalModello.get(0).getTextValue());
-								dettaglio.put("quantità", quantità);
-								dettaglio.put("stato_articolo", "PRONTO");
-
-								final Long costo = listino.get(stagione + modello + articolo);
-								if (costo == null) {
-									System.out.println("SALMOD ARTICOLO NON IN LISTINO: stagione=" + stagione + ", modello=" + modello + ", articolo="
-											+ articolo + ".");
-								}
-								else {
-									dettaglio.put("costo_di_acquisto", costo);
-								}
+								final String codiceABarre = stagione + modello + articolo + colore
+										+ padTaglia(descrizioniTaglie.get(descrizioneTaglia).getTextValue());
+								dettaglio.add(codiceABarre);
+								dettaglio.add(quantità);
+								dettaglio.add(disponibile);
+								grandeInventario.add(new RigaInventario(codiceABarre, quantità, CLIENTE_DISPONIBILE, disponibile));
 							}
 						}
 					}
@@ -615,39 +733,67 @@ public class As400Importer {
 			}
 
 			boolean aggiornaInventario = false;
-			final ObjectNode inventarioCouchDb;
+			final ObjectNode inventarioDisponibileCouchDb;
 			{
 				{
 					ObjectNode docInventarioCouchDb = null;
 					try {
-						docInventarioCouchDb = CouchDb.getLatest(couchDb, "movimenti", CLIENTE_DISPONIBILE);
+						docInventarioCouchDb = couchDb.get(ObjectNode.class, "inventario/" + CLIENTE_DISPONIBILE);
 					} catch (final DocumentNotFoundException ex) {
 						aggiornaInventario = true;
 					}
-					inventarioCouchDb = docInventarioCouchDb;
+					inventarioDisponibileCouchDb = docInventarioCouchDb;
 				}
 
 				if (!aggiornaInventario) {
-					final ArrayNode movimentiAs400 = (ArrayNode) inventarioDisponibile.get("movimenti");
-					final ArrayNode movimentiCouchDb = (ArrayNode) inventarioCouchDb.get("movimenti");
-					if (movimentiAs400 == null) {
-						aggiornaInventario = movimentiCouchDb != null;
+					final ArrayNode inventarioAs400 = (ArrayNode) inventarioDisponibile.get("inventario");
+					final ArrayNode inventarioCouchDb = (ArrayNode) inventarioDisponibileCouchDb.get("inventario");
+					if (inventarioAs400 == null) {
+						aggiornaInventario = inventarioCouchDb != null;
 					}
-					else if (movimentiCouchDb == null || movimentiAs400.size() != movimentiCouchDb.size()) {
+					else if (inventarioCouchDb == null || inventarioAs400.size() != inventarioCouchDb.size()) {
 						aggiornaInventario = true;
 					}
 					else {
-						for (int i = 0, n = movimentiAs400.size(); i < n && !aggiornaInventario; ++i) {
-							final ObjectNode a = (ObjectNode) movimentiAs400.get(i);
-							final ObjectNode b = (ObjectNode) movimentiCouchDb.get(i);
-							aggiornaInventario = !(sameText(a, b, "codice_a_barre") && sameText(a, b, "descrizione")
-									&& sameLong(a, b, "costo_di_acquisto") && sameText(a, b, "stato_articolo") && sameLong(a, b, "quantità"));
+						for (int i = 0, n = inventarioAs400.size(); i < n && !aggiornaInventario; ++i) {
+							final ArrayNode a = (ArrayNode) inventarioAs400.get(i);
+							final ArrayNode b = (ArrayNode) inventarioCouchDb.get(i);
+							aggiornaInventario = a.size() != b.size() || //
+									!a.get(idx_codice_a_barre).getTextValue().equals(b.get(idx_codice_a_barre).getTextValue()) || //
+									a.get(idx_quantità).getLongValue() != b.get(idx_quantità).getLongValue() || //
+									a.get(idx_disponibile).getIntValue() != b.get(idx_disponibile).getIntValue();
 						}
 					}
 				}
 			}
 			if (aggiornaInventario) {
-				salvaInventario(couchDb, dataInventario, CLIENTE_DISPONIBILE, inventarioDisponibile, inventarioCouchDb);
+				salvaInventario(couchDb, CLIENTE_DISPONIBILE, inventarioDisponibile, inventarioDisponibileCouchDb);
+				aggiornaGrandeInventario = true;
+
+			}
+		}
+
+		ObjectNode docInventario = null;
+		try {
+			docInventario = couchDb.get(ObjectNode.class, "inventari");
+		} catch (final DocumentNotFoundException ex) {
+			docInventario = JsonNodeFactory.instance.objectNode();
+			aggiornaGrandeInventario = true;
+		}
+
+		if (aggiornaGrandeInventario) {
+			docInventario.put("data", dataInventario);
+			final ArrayNode inventario = docInventario.putArray("inventario");
+			for (final RigaInventario riga : grandeInventario) {
+				inventario.add(riga.toArrayNode());
+			}
+			if (docInventario.has("_rev")) {
+				System.out.println("Aggiorno inventario.");
+				couchDb.update(docInventario);
+			}
+			else {
+				System.out.println("Creo inventario.");
+				couchDb.create("inventari", docInventario);
 			}
 		}
 	}
@@ -660,37 +806,24 @@ public class As400Importer {
 		return codiceTaglia.length() == 1 ? "0" + codiceTaglia : codiceTaglia;
 	}
 
-	private static void salvaInventario(final CouchDbConnector couchDb, final String dataInventario, final String codiceCliente,
-			final ObjectNode inventarioMagazzino, final ObjectNode inventarioCouchDb) {
-		final String docId;
-		{
-			final long id;
-			if (inventarioCouchDb == null) {
-				id = 1;
-			}
-			else {
-				final String[] ids = inventarioCouchDb.get("_id").getTextValue().split("/");
-				if (ids[2].equals(dataInventario)) {
-					id = Long.parseLong(ids[3]) + 1;
-				}
-				else {
-					id = 1;
-				}
-			}
-			docId = "movimenti/" + codiceCliente + "/" + dataInventario + "/" + id;
+	private static void salvaInventario(final CouchDbConnector couchDb, final String codiceCliente,
+			final ObjectNode inventarioAs400, final ObjectNode inventarioCouchDb) {
+		final String docId = "inventario/" + codiceCliente;
+		if (inventarioCouchDb == null) {
+			System.out.println("Creo inventario " + docId);
+			couchDb.create(docId, inventarioAs400);
 		}
-		System.out.println("Aggiorno inventario " + docId);
-		couchDb.create(docId, inventarioMagazzino);
+		else {
+			System.out.println("Aggiorno inventario " + docId);
+			inventarioAs400.put("_id", docId);
+			inventarioAs400.put("_rev", inventarioCouchDb.get("_rev").getTextValue());
+			couchDb.update(inventarioAs400);
+		}
 	}
 
 	private static boolean sameInt(final ObjectNode a, final ObjectNode b, final String campo) {
 		final boolean hasCampo = a.has(campo);
 		return hasCampo == b.has(campo) && (!hasCampo || a.get(campo).getIntValue() == b.get(campo).getIntValue());
-	}
-
-	private static boolean sameLong(final ObjectNode a, final ObjectNode b, final String campo) {
-		final boolean hasCampo = a.has(campo);
-		return hasCampo == b.has(campo) && (!hasCampo || a.get(campo).getLongValue() == b.get(campo).getLongValue());
 	}
 
 	private static boolean sameText(final ObjectNode a, final ObjectNode b, final String campo) {
