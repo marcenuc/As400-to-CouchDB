@@ -132,14 +132,11 @@ public class As400Importer {
 	private static final String								ID_AZIENDA											= "azienda/";
 	private static final String[]							CLIENTI_MAGAZZINO								= { "019999", "099990", "099991" };
 
-	private static final String[]							CLIENTE_DISPONIBILE							= { "019997", "019998" };
-
-	private static final String								SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
-																																								+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
-																																								+ " STAGLI AS DESCRIZIONE_TAGLIA,"
-																																								+ " SSCALA AS SCALARINO, SUM(SQUANT) AS QTA FROM ABB_DATV3.SALMOD"
-																																								+ " WHERE SCODMA='D' AND SCLIDI=2 AND SQUANT>0"
-																																								+ " GROUP BY SSTAGI, SMODEL, SARTIC, SCOLOR, STAGLI, SSCALA";
+	private static final Map<String, String>  CLIENTE_DISPONIBILE							= new HashMap<String, String>(2);
+	static {
+		CLIENTE_DISPONIBILE.put("019997", "K");
+		CLIENTE_DISPONIBILE.put("019998", "D");
+	}
 
 	private static final String								SELECT_FROM_ANMOD00F						= "SELECT ANSTAG AS STAGIONE, ANMODE AS MODELLO,"
 																																								+ " ANDESC AS DESCRIZIONE, ANSCAL AS SCALARINO"
@@ -216,6 +213,15 @@ public class As400Importer {
 				+ "   FROM ABB_DATV3.ORDET00F WHERE (DESTA2='1' OR DESTA2='2') AND DETIPR LIKE 'A' AND DECLIE='"
 				+ codiceCliente
 				+ "' GROUP BY DESTAG, DEMODE, DEARTI, DECOLO, DESCAD, DESTA2";
+	}
+
+	private static String getSelectFromSalmod(final String codiceCliente) {
+		return "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
+				+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
+				+ " STAGLI AS DESCRIZIONE_TAGLIA,"
+				+ " SSCALA AS SCALARINO, SUM(SQUANT) AS QTA FROM ABB_DATV3.SALMOD"
+				+ " WHERE SCODMA='" + CLIENTE_DISPONIBILE.get(codiceCliente) + "' AND SCLIDI=2 AND SQUANT>0"
+				+ " GROUP BY SSTAGI, SMODEL, SARTIC, SCOLOR, STAGLI, SSCALA";
 	}
 
 	private static Integer getStatoArticolo(final String statoPolmone) {
@@ -682,7 +688,7 @@ public class As400Importer {
 		/*
 		 * Importazione SALMOD.
 		 */
-		for (final String clienteDisponibile : CLIENTE_DISPONIBILE) {
+		for (final String clienteDisponibile : CLIENTE_DISPONIBILE.keySet()) {
 			final ObjectNode inventarioDisponibile = JsonNodeFactory.instance.objectNode();
 			{
 				inventarioDisponibile.put("indici_campo", indiciCampo);
@@ -694,7 +700,7 @@ public class As400Importer {
 				final Integer disponibile = statiArticolo.get("PRONTO");
 
 				// System.out.println(SELECT_FROM_SALMOD);
-				final ResultSet salmod = statement.executeQuery(SELECT_FROM_SALMOD);
+				final ResultSet salmod = statement.executeQuery(getSelectFromSalmod(clienteDisponibile));
 				while (salmod.next()) {
 					final String stagione = salmod.getString("STAGIONE");
 					final String modello = salmod.getString("MODELLO");
