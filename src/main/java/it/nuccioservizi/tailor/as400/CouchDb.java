@@ -21,7 +21,7 @@ public class CouchDb {
 
 	public static CouchDbConnector get(final AppProperties properties) {
 		final HttpClient http = new StdHttpClient.Builder().host(properties.get(Property.COUCHDB_HOST))
-				.port(Integer.valueOf(properties.get(Property.COUCHDB_PORT)))
+				.port(Integer.parseInt(properties.get(Property.COUCHDB_PORT)))
 				.username(properties.get(Property.COUCHDB_USERNAME))
 				.password(properties.get(Property.COUCHDB_PASSWORD))
 				.socketTimeout(30000)
