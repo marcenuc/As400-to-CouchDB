@@ -7,42 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
-import javax.swing.JTextField;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-
 public class AppProperties {
-
-	static final class UpdatePropertyDocumentListener implements DocumentListener {
-		private final AppProperties	properties;
-		private final Property			property;
-		private final JTextField		textField;
-
-		public UpdatePropertyDocumentListener(final AppProperties properties, final Property property, final JTextField textField) {
-			this.properties = properties;
-			this.property = property;
-			this.textField = textField;
-		}
-
-		@Override
-		public void changedUpdate(final DocumentEvent e) {
-			updateProperty();
-		}
-
-		@Override
-		public void insertUpdate(final DocumentEvent e) {
-			updateProperty();
-		}
-
-		@Override
-		public void removeUpdate(final DocumentEvent e) {
-			updateProperty();
-		}
-
-		private void updateProperty() {
-			properties.set(property, textField.getText());
-		}
-	}
 
 	public static final String	LOCAL_PROPERTIES_FILE_NAME		= "local.properties";
 	private static final String	DEFAULT_PROPERTIES_FILE_NAME	= "/defaults.properties";
@@ -57,7 +22,8 @@ public class AppProperties {
 		try {
 			loadPropertiesFromFile(LOCAL_PROPERTIES_FILE_NAME, properties);
 		} catch (final FileNotFoundException e) {
-			// Niente proprietà locali.
+			// No local properties.
+			// TODO add logging and issue a info/debug message here.
 		}
 		return new AppProperties(properties);
 	}
@@ -72,7 +38,7 @@ public class AppProperties {
 				try {
 					in.close();
 				} catch (final IOException e) {
-					// Niente da fare
+					// TODO add logging and issue a warning here.
 				}
 		}
 	}
@@ -88,7 +54,7 @@ public class AppProperties {
 				try {
 					in.close();
 				} catch (final IOException e) {
-					// Niente da fare
+					// TODO add logging and issue a warning here.
 				}
 		}
 	}
@@ -112,7 +78,7 @@ public class AppProperties {
 		FileOutputStream out = null;
 		try {
 			out = new FileOutputStream(LOCAL_PROPERTIES_FILE_NAME);
-			properties.store(out, "--- Modificare questo file per configurare l'applicazione ---");
+			properties.store(out, "--- Edit this file to configure the application ---");
 		} finally {
 			if (out != null)
 				out.close();
