@@ -132,7 +132,7 @@ public class As400Importer {
 	private static final String								ID_AZIENDA											= "azienda/";
 	private static final String[]							CLIENTI_MAGAZZINO								= { "019999", "099990", "099991" };
 
-	private static final String								CLIENTE_DISPONIBILE							= "019998";
+	private static final String[]							CLIENTE_DISPONIBILE							= { "019997", "019998" };
 
 	private static final String								SELECT_FROM_SALMOD							= "SELECT SSTAGI AS STAGIONE, SMODEL AS MODELLO,"
 																																								+ " SARTIC AS ARTICOLO, SCOLOR AS COLORE,"
@@ -682,7 +682,7 @@ public class As400Importer {
 		/*
 		 * Importazione SALMOD.
 		 */
-		{
+		for (final String clienteDisponibile : CLIENTE_DISPONIBILE) {
 			final ObjectNode inventarioDisponibile = JsonNodeFactory.instance.objectNode();
 			{
 				inventarioDisponibile.put("indici_campo", indiciCampo);
@@ -725,7 +725,7 @@ public class As400Importer {
 								dettaglio.add(codiceABarre);
 								dettaglio.add(quantità);
 								dettaglio.add(disponibile);
-								grandeInventario.add(new RigaInventario(codiceABarre, quantità, CLIENTE_DISPONIBILE, disponibile));
+								grandeInventario.add(new RigaInventario(codiceABarre, quantità, clienteDisponibile, disponibile));
 							}
 						}
 					}
@@ -738,7 +738,7 @@ public class As400Importer {
 				{
 					ObjectNode docInventarioCouchDb = null;
 					try {
-						docInventarioCouchDb = couchDb.get(ObjectNode.class, "inventario/" + CLIENTE_DISPONIBILE);
+						docInventarioCouchDb = couchDb.get(ObjectNode.class, "inventario/" + clienteDisponibile);
 					} catch (final DocumentNotFoundException ex) {
 						aggiornaInventario = true;
 					}
@@ -767,7 +767,7 @@ public class As400Importer {
 				}
 			}
 			if (aggiornaInventario) {
-				salvaInventario(couchDb, CLIENTE_DISPONIBILE, inventarioDisponibile, inventarioDisponibileCouchDb);
+				salvaInventario(couchDb, clienteDisponibile, inventarioDisponibile, inventarioDisponibileCouchDb);
 				aggiornaGrandeInventario = true;
 
 			}
